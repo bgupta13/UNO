@@ -23,6 +23,7 @@ public class LobbyView extends VerticalLayout implements BeforeEnterObserver {
 
 
     public LobbyView(LobbyService lobbyService, GameService gameService) {
+        
 
         //Time interval for checking if game starts
         UI.getCurrent().setPollInterval(2000);
@@ -38,6 +39,8 @@ public class LobbyView extends VerticalLayout implements BeforeEnterObserver {
         add(playersDiv);
     }
 
+
+
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
         String code = event.getRouteParameters().get("code").orElse("");
@@ -48,7 +51,6 @@ public class LobbyView extends VerticalLayout implements BeforeEnterObserver {
             add("Lobby not found");
             return;
         }
-
         this.currentLobby = lobby;
 
         //Checking that player has a name

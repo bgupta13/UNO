@@ -10,4 +10,9 @@ vaadin-text-field.bordered::part(input-field) {
   background-color: var(--lumo-base-color);
 }
 
+/* Orange Background for application */
+html, body {
+    background-color: orange;
+}
+
 
