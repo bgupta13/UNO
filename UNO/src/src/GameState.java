@@ -46,7 +46,7 @@ public class GameState {
     // --- PLAY CARD ---
     public boolean playCard(Player player, Card card) {
 
-        if (player != getCurrentPlayer()) return false;
+    	if (!player.equals(getCurrentPlayer())) return false;
 
         if (!isValidMove(card, topCard)) return false;
 
@@ -67,6 +67,25 @@ public class GameState {
 
         nextTurn(skip);
         return true;
+    }
+    
+    public void performAITurn() {
+        Player current = getCurrentPlayer();
+
+        if (!(current instanceof AIPlayer)) {
+            return;
+        }
+
+        AIPlayer ai = (AIPlayer) current;
+        Hand hand = hands.get(ai);
+
+        Card chosen = ai.chooseCardToPlay(hand, topCard, stackingEnabled);
+
+        if (chosen == null) {
+            draw(ai);
+        } else {
+            playCard(ai, chosen);
+        }
     }
 
     // --- DRAW LOGIC ---
