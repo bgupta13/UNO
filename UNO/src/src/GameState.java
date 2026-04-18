@@ -7,7 +7,8 @@ public class GameState {
     private List<Player> players;
     private Map<Player, Hand> hands = new HashMap<>();
     private Deck deck;
-
+    private Player unoPendingPlayer = null;
+    private boolean unoCalled = false;
     private int currentPlayerIndex = 0;
     private int direction = 1; // 1 = clockwise, -1 = reverse
 
@@ -36,6 +37,14 @@ public class GameState {
     public Player getCurrentPlayer() {
         return players.get(currentPlayerIndex);
     }
+    
+    public Player getUnoPendingPlayer() {
+        return unoPendingPlayer;
+    }
+
+    public boolean isUnoCalled() {
+        return unoCalled;
+    }
 
     public void nextTurn(int skipCount) {
         currentPlayerIndex =
@@ -45,9 +54,9 @@ public class GameState {
 
     // --- PLAY CARD ---
     public boolean playCard(Player player, Card card) {
-
-    	if (!player.equals(getCurrentPlayer())) return false;
-
+    	
+    	resolveUnoPenalty();
+        if (!player.equals(getCurrentPlayer())) return false;
         if (!isValidMove(card, topCard)) return false;
 
         Hand hand = hands.get(player);
@@ -58,15 +67,51 @@ public class GameState {
 
         int skip = applyCardEffect(card);
 
-        // UNO penalty check (simplified)
         if (hand.getCards().size() == 1) {
-            // assume player forgot to call UNO
-            hand.addCard(deck.drawCard());
-            hand.addCard(deck.drawCard());
+            unoPendingPlayer = player;
+            unoCalled = false;
+        } else if (hand.getCards().isEmpty()) {
+            unoPendingPlayer = null;
+            unoCalled = false;
+            return true;
         }
 
         nextTurn(skip);
         return true;
+    }
+    
+    public boolean callUno(Player caller) {
+        if (unoPendingPlayer == null) {
+            return false;
+        }
+
+        // Only first call counts
+        if (unoCalled) {
+            return false;
+        }
+
+        unoCalled = true;
+
+        // If someone other than the pending player called UNO first,
+        // the pending player gets penalized.
+        if (!caller.equals(unoPendingPlayer)) {
+            Hand penalizedHand = hands.get(unoPendingPlayer);
+            penalizedHand.addCard(deck.drawCard());
+            penalizedHand.addCard(deck.drawCard());
+        }
+
+        return true;
+    }
+    
+    private void resolveUnoPenalty() {
+        if (unoPendingPlayer != null && !unoCalled) {
+            Hand penalizedHand = hands.get(unoPendingPlayer);
+            penalizedHand.addCard(deck.drawCard());
+            penalizedHand.addCard(deck.drawCard());
+        }
+
+        unoPendingPlayer = null;
+        unoCalled = false;
     }
     
     public void performAITurn() {
@@ -90,6 +135,8 @@ public class GameState {
 
     // --- DRAW LOGIC ---
     public void draw(Player player) {
+    	
+    	resolveUnoPenalty();
 
         if (player != getCurrentPlayer()) return;
 
