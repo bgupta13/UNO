@@ -60,11 +60,11 @@ public class Card {
     @Override
     public String toString() {
         if (type == Type.NUMBER) {
-            return color + " " + number;
+            return color + "_" + number;
         }
         if (type == Type.PARTY) {
             return "PARTY: " + partyName;
         }
-        return color + " " + type;
+        return color + "_" + type;
     }
 }

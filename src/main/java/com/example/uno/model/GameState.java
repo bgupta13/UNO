@@ -2,6 +2,9 @@ package com.example.uno.model;
 
 import java.util.*;
 
+import com.example.uno.model.Card.Type;
+import com.vaadin.flow.component.charts.model.style.Color;
+
 public class GameState {
 
     private List<Player> players;
@@ -35,6 +38,10 @@ public class GameState {
         }
 
         topCard = deck.drawCard();
+    }
+
+    public Deck getDeck() {
+        return deck;
     }
 
     public Player getCurrentPlayer() {
@@ -163,5 +170,24 @@ public class GameState {
 
     public Card getTopCard() {
         return topCard;
+    }
+
+    public boolean compareToDiscard(Card playerCard) {
+        Card.Color discardColor = deck.getTopDiscard().getColor();
+        Card.Color playerColor = playerCard.getColor();
+        boolean colorEqual = discardColor.equals(playerColor) || playerColor.equals(Card.Color.WILD);
+
+        int discardNumber = deck.getTopDiscard().getNumber();
+        int playerNumber = playerCard.getNumber();
+        boolean numberEqual = discardNumber == playerNumber;
+
+        Card.Type discardType = deck.getTopDiscard().getType();
+        Card.Type playerType = playerCard.getType();
+        boolean typeEqual = discardType.equals(playerType) && !discardType.equals(Card.Type.NUMBER);
+        
+        if(colorEqual || numberEqual || typeEqual) {
+            return true;
+        }
+        return false;
     }
 }
