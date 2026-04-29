@@ -1,24 +1,26 @@
 package src;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+import java.util.Stack;
 
 public class Deck {
 
-    private Stack<Card> drawPile = new Stack<>();
-    private List<Card> discardPile = new ArrayList<>();
-    private List<Card> cardPool = new ArrayList<>();
+    private final Stack<Card> drawPile = new Stack<>();
+    private final List<Card> discardPile = new ArrayList<>();
+    private final List<Card> cardPool = new ArrayList<>();
+    private final Random random = new Random();
 
-    private Random random = new Random();
-
-    public Deck(List<String> enabledPartyCards) {
+    public Deck(Collection<Card.PartyType> enabledPartyCards) {
         buildCardPool(enabledPartyCards);
         buildInitialDeck();
         shuffle();
     }
 
-    // Build weighted pool (controls probability)
-    private void buildCardPool(List<String> partyCards) {
-
+    private void buildCardPool(Collection<Card.PartyType> partyCards) {
         Card.Color[] colors = {
                 Card.Color.RED,
                 Card.Color.BLUE,
@@ -26,57 +28,36 @@ public class Deck {
                 Card.Color.YELLOW
         };
 
-        // NUMBER CARDS (high weight ~67%)
         for (Card.Color color : colors) {
-            for (int i = 0; i <= 9; i++) {
-                for (int w = 0; w < 8; w++) { // weight multiplier
-                    cardPool.add(new Card(color, i));
+            for (int number = 0; number <= 9; number++) {
+                for (int w = 0; w < 8; w++) {
+                    cardPool.add(new Card(color, number));
                 }
             }
         }
 
-        // SKIP (~7%)
         for (Card.Color color : colors) {
             for (int w = 0; w < 3; w++) {
                 cardPool.add(new Card(color, Card.Type.SKIP));
-            }
-        }
-
-        // REVERSE (~7%)
-        for (Card.Color color : colors) {
-            for (int w = 0; w < 3; w++) {
                 cardPool.add(new Card(color, Card.Type.REVERSE));
-            }
-        }
-
-        // DRAW TWO (~7%)
-        for (Card.Color color : colors) {
-            for (int w = 0; w < 3; w++) {
                 cardPool.add(new Card(color, Card.Type.DRAW_TWO));
             }
         }
 
-        // WILD (~3.5%)
         for (int w = 0; w < 4; w++) {
             cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD));
-        }
-
-        // WILD DRAW FOUR (~3.5%)
-        for (int w = 0; w < 4; w++) {
             cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD_DRAW_FOUR));
         }
 
-        // PARTY CARDS (~up to 5%)
         if (partyCards != null) {
-            for (String name : partyCards) {
+            for (Card.PartyType partyType : partyCards) {
                 for (int w = 0; w < 2; w++) {
-                    cardPool.add(new Card(name));
+                    cardPool.add(new Card(partyType));
                 }
             }
         }
     }
 
-    // Initial finite deck (optional realism)
     private void buildInitialDeck() {
         for (int i = 0; i < 100; i++) {
             drawPile.add(generateFromPool());
@@ -89,36 +70,44 @@ public class Deck {
 
     public Card drawCard() {
         if (drawPile.isEmpty()) {
-            return generateFromPool(); // infinite behavior
+            return generateFromPool();
         }
+
         return drawPile.pop();
     }
 
     public void addToDiscard(Card card) {
-        discardPile.add(card);
+        if (card != null) {
+            discardPile.add(card);
+        }
     }
 
     public Card getTopDiscard() {
-        if (discardPile.isEmpty()) return null;
+        if (discardPile.isEmpty()) {
+            return null;
+        }
+
         return discardPile.get(discardPile.size() - 1);
     }
 
-    // Core generator using weighted pool
-    private Card generateFromPool() {
-        int index = random.nextInt(cardPool.size());
-        Card template = cardPool.get(index);
+    public int cardsRemainingBeforeInfiniteGeneration() {
+        return drawPile.size();
+    }
 
+    private Card generateFromPool() {
+        Card template = cardPool.get(random.nextInt(cardPool.size()));
         return cloneCard(template);
     }
 
-    // Prevent shared references
     private Card cloneCard(Card c) {
         if (c.getType() == Card.Type.NUMBER) {
             return new Card(c.getColor(), c.getNumber());
-        } else if (c.getType() == Card.Type.PARTY) {
-            return new Card(c.getPartyName());
-        } else {
-            return new Card(c.getColor(), c.getType());
         }
+
+        if (c.getType() == Card.Type.PARTY) {
+            return new Card(c.getPartyType());
+        }
+
+        return new Card(c.getColor(), c.getType());
     }
 }

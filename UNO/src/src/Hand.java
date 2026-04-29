@@ -1,29 +1,36 @@
 package src;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class Hand {
 
-    private List<Card> cards = new ArrayList<>();
+    private final List<Card> cards = new ArrayList<>();
 
     public void addCard(Card c) {
-        cards.add(c);
+        if (c != null) {
+            cards.add(c);
+        }
     }
 
-    public void removeCard(Card c) {
-        cards.remove(c);
+    public boolean removeCard(Card c) {
+        return cards.remove(c);
     }
 
     public List<Card> getCards() {
         return cards;
     }
 
-    public boolean hasValidMove(Card topCard) {
-        for (Card c : cards) {
-            if (GameState.isValidMove(c, topCard)) {
-                return true;
-            }
-        }
-        return false;
+    public List<Card> getCardsReadOnly() {
+        return Collections.unmodifiableList(cards);
+    }
+
+    public int size() {
+        return cards.size();
+    }
+
+    public boolean isEmpty() {
+        return cards.isEmpty();
     }
 }

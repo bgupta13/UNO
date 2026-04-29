@@ -14,25 +14,29 @@ public class AIPlayer extends Player {
         super(name);
     }
 
-    /**
-     * Returns the card the AI wants to play.
-     * Returns null if it wants to draw instead.
-     */
-    public Card chooseCardToPlay(Hand hand, Card topCard, boolean stackingEnabled) {
+    @Override
+    public boolean isAI() {
+        return true;
+    }
+
+    public Card chooseCardToPlay(
+            Hand hand,
+            Card topCard,
+            Card.Color activeColor,
+            boolean stackingEnabled
+    ) {
         List<Card> validCards = new ArrayList<>();
 
         for (Card card : hand.getCards()) {
-            if (GameState.isValidMove(card, topCard)) {
+            if (GameState.isValidMove(card, topCard, activeColor)) {
                 validCards.add(card);
             }
         }
 
-        // 1. No valid move -> draw
         if (validCards.isEmpty()) {
             return null;
         }
 
-        // 2. If stacking is possible, prefer stack cards
         if (stackingEnabled &&
             (topCard.getType() == Card.Type.DRAW_TWO ||
              topCard.getType() == Card.Type.WILD_DRAW_FOUR)) {
@@ -44,14 +48,12 @@ public class AIPlayer extends Player {
             }
         }
 
-        // 3. If can match previous card, prefer that
         for (Card card : validCards) {
-            if (matchesPrevious(card, topCard)) {
+            if (matchesPrevious(card, topCard, activeColor)) {
                 return card;
             }
         }
 
-        // 4. Prefer cards in the color the AI has the most of
         Card.Color bestColor = getMostCommonColor(hand);
 
         if (bestColor != null) {
@@ -60,7 +62,8 @@ public class AIPlayer extends Player {
             for (Card card : validCards) {
                 if (card.getColor() == bestColor &&
                     card.getType() != Card.Type.WILD &&
-                    card.getType() != Card.Type.WILD_DRAW_FOUR) {
+                    card.getType() != Card.Type.WILD_DRAW_FOUR &&
+                    card.getType() != Card.Type.PARTY) {
                     bestColorCards.add(card);
                 }
             }
@@ -70,8 +73,12 @@ public class AIPlayer extends Player {
             }
         }
 
-        // 5. Fallback: play any random valid card
         return validCards.get(random.nextInt(validCards.size()));
+    }
+
+    public Card.Color chooseWildColor(Hand hand) {
+        Card.Color best = getMostCommonColor(hand);
+        return best != null ? best : Card.Color.RED;
     }
 
     private boolean canStack(Card candidate, Card topCard) {
@@ -81,8 +88,8 @@ public class AIPlayer extends Player {
                 candidate.getType() == Card.Type.WILD_DRAW_FOUR);
     }
 
-    private boolean matchesPrevious(Card candidate, Card topCard) {
-        if (candidate.getColor() == topCard.getColor()) {
+    private boolean matchesPrevious(Card candidate, Card topCard, Card.Color activeColor) {
+        if (candidate.getColor() == activeColor) {
             return true;
         }
 
@@ -95,9 +102,6 @@ public class AIPlayer extends Player {
         return candidate.getType() == topCard.getType();
     }
 
-    /**
-     * Finds the most common non-wild color in the AI's hand.
-     */
     private Card.Color getMostCommonColor(Hand hand) {
         Map<Card.Color, Integer> colorCounts = new EnumMap<>(Card.Color.class);
 
@@ -124,10 +128,6 @@ public class AIPlayer extends Player {
             }
         }
 
-        if (maxCount <= 0) {
-            return null;
-        }
-
-        return bestColor;
+        return maxCount > 0 ? bestColor : null;
     }
 }
