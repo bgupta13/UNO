@@ -1,10 +1,12 @@
 package com.example.uno.view;
 
 import com.example.uno.model.*;
+import com.example.uno.model.Card.PartyType;
 import com.example.uno.service.GameService;
 import com.example.uno.service.LobbyService;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
@@ -22,11 +24,16 @@ public class LobbyView extends VerticalLayout implements BeforeEnterObserver {
     private Lobby currentLobby;
     private String code = "";
 
+    private boolean canStack;
+    private boolean canSkipChain;
+
     // Elements
     private Div playersDiv = new Div();
     private H2 roomCodeText = new H2();
     private Button refreshButton = new Button("Refresh");
     private Button startButton = new Button("Start Game");
+    private Button addAIButton = new Button("Add AI Player");
+
 
     public LobbyView(LobbyService lobbyService, GameService gameService) {
         this.lobbyService = lobbyService;
@@ -82,17 +89,55 @@ public class LobbyView extends VerticalLayout implements BeforeEnterObserver {
 
         roomCodeText.setText("Lobby Code: " + code);
 
+        // LEFT SIDE (players)
         H3 playersLabel = new H3("Players");
-
         VerticalLayout playerSection = new VerticalLayout(playersLabel, playersDiv);
-
         playerSection.setPadding(false);
         playerSection.setSpacing(false);
         playerSection.setAlignItems(Alignment.CENTER);
+        playerSection.setWidth("70%");
 
+        // RIGHT SIDE (checkbox settings)
+        H3 settingsLabel = new H3("Game Rules");
+
+        Checkbox allowStacking = new Checkbox("Allow Stacking");
+        Checkbox drawUntilValid = new Checkbox("Draw Until Valid Card");
+        Checkbox partyKarlMarx = new Checkbox("Party Card | Karl Marx");
+        Checkbox partySwapper = new Checkbox("Party Card | Swapper");
+        Checkbox partyRotator = new Checkbox("Party Card | Rotator");
+
+
+
+
+
+        // Example default values
+        allowStacking.setValue(false);
+        drawUntilValid.setValue(false);
+        partyKarlMarx.setValue(false);
+        partySwapper.setValue(false);
+        partyRotator.setValue(false);
+
+        VerticalLayout settingsSection = new VerticalLayout(
+                settingsLabel,
+                allowStacking,
+                drawUntilValid,
+                partyKarlMarx,
+                partySwapper,
+                partyRotator
+        );
+
+        settingsSection.setWidth("30%");
+        settingsSection.setAlignItems(Alignment.START);
+
+        // MAIN CONTENT (left + right)
+        HorizontalLayout mainContent = new HorizontalLayout(playerSection, settingsSection);
+        mainContent.setSizeFull();
+        mainContent.setAlignItems(Alignment.START);
+
+        // Refresh button
         refreshButton.addClickListener(e -> refreshPlayers());
 
-        // Horizontal buttons at bottom
+        // Bottom buttons
         HorizontalLayout buttonRow = new HorizontalLayout();
         buttonRow.setSpacing(true);
         buttonRow.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
@@ -101,17 +146,37 @@ public class LobbyView extends VerticalLayout implements BeforeEnterObserver {
 
         if (player.equals(currentLobby.getHost())) {
             startButton.addClickListener(e -> {
+
+                // Read checkbox values when starting
+                currentLobby.setLobbyRules(
+                        allowStacking.getValue(),
+                        drawUntilValid.getValue(),
+                        partyKarlMarx.getValue(),
+                        partyRotator.getValue(),
+                        partySwapper.getValue()
+                );
+
+
                 gameService.startGame(currentLobby);
+                
+                
+
                 getUI().ifPresent(ui ->
                         ui.navigate("game/" + currentLobby.getRoomCode()));
             });
-
             buttonRow.add(startButton);
+
+            addAIButton.addClickListener(e -> {
+                currentLobby.addAIPlayer();
+            });
+            buttonRow.add(addAIButton);
         }
 
-        add(roomCodeText, playerSection, buttonRow);
-        expand(playerSection); // pushes buttons to bottom
+        add(roomCodeText, mainContent, buttonRow);
+        expand(mainContent); // pushes buttons to bottom
     }
+
+    
 
     private void refreshPlayers() {
         playersDiv.removeAll();
