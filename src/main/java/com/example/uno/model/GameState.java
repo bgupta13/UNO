@@ -17,8 +17,8 @@ public class GameState {
     private int currentPlayerIndex = 0;
     private int direction = 1;
     private int pendingDrawAmount = 0;
-    
     private Card.Type pendingDrawType = null;
+
     private Card topCard;
     private Card.Color activeColor;
 
@@ -114,6 +114,16 @@ public class GameState {
             return false;
         }
 
+        Hand hand = hands.get(player);
+
+        if (hand == null || !hand.getCards().contains(card)) {
+            return false;
+        }
+
+        if (!canPlayDuringStack(card)) {
+            return false;
+        }
+
         if (requiresChosenColor(card)) {
             if (chosenColor == null) {
                 chosenColor = Card.Color.RED;
@@ -122,12 +132,6 @@ public class GameState {
             if (!isPlayableColor(chosenColor)) {
                 return false;
             }
-        }
-
-        Hand hand = hands.get(player);
-
-        if (hand == null || !hand.getCards().contains(card)) {
-            return false;
         }
 
         hand.removeCard(card);
@@ -181,32 +185,43 @@ public class GameState {
 
         Hand hand = hands.get(player);
 
+        // If there is a Draw Two stack, this player must take the full penalty
+        // unless they have already played a Draw Two through playCard().
+        if (pendingDrawAmount > 0) {
+            for (int i = 0; i < pendingDrawAmount; i++) {
+                hand.addCard(deck.drawCard());
+            }
+
+            clearPendingDraw();
+            nextTurn(0);
+            runAITurnsIfNeeded();
+            return;
+        }
+
+        Card drawn = deck.drawCard();
+        hand.addCard(drawn);
+
+        if (isValidMove(drawn, topCard, activeColor)) {
+            Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
+            playCard(player, drawn, chosenColor);
+            return;
+        }
+
         if (rules.isDrawUntilValidEnabled()) {
             while (true) {
-                Card drawn = deck.drawCard();
+                drawn = deck.drawCard();
                 hand.addCard(drawn);
 
                 if (isValidMove(drawn, topCard, activeColor)) {
                     Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
-                    Player target = getDrawnCardTarget(player, drawn);
-                    playCard(player, drawn, chosenColor, target);
+                    playCard(player, drawn, chosenColor);
                     return;
                 }
             }
-        } else {
-            Card drawn = deck.drawCard();
-            hand.addCard(drawn);
-
-            if (isValidMove(drawn, topCard, activeColor)) {
-                Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
-                Player target = getDrawnCardTarget(player, drawn);
-                playCard(player, drawn, chosenColor, target);
-                return;
-            }
-
-            nextTurn(0);
-            runAITurnsIfNeeded();
         }
+
+        nextTurn(0);
+        runAITurnsIfNeeded();
     }
 
     private Card.Color getDrawnCardChosenColor(Player player, Card drawn, Hand hand) {
@@ -219,21 +234,6 @@ public class GameState {
         }
 
         return Card.Color.RED;
-    }
-
-    private Player getDrawnCardTarget(Player player, Card drawn) {
-        if (drawn != null &&
-            drawn.getType() == Card.Type.PARTY &&
-            drawn.getPartyType() == Card.PartyType.SWAPPER) {
-
-            if (player instanceof AIPlayer) {
-                return chooseRandomTarget(player);
-            }
-
-            return null;
-        }
-
-        return null;
     }
 
     public boolean callUno(Player caller) {
@@ -275,21 +275,34 @@ public class GameState {
     private int applyCardEffect(Card card) {
         switch (card.getType()) {
             case SKIP:
+                clearPendingDraw();
                 return 1;
 
             case REVERSE:
+                clearPendingDraw();
                 direction *= -1;
                 return players.size() == 2 ? 1 : 0;
 
             case DRAW_TWO:
-                applyDrawToNextPlayer(2);
-                return 1;
+                if (rules.isStackingEnabled()) {
+                    pendingDrawAmount += 2;
+                    pendingDrawType = Card.Type.DRAW_TWO;
+                    return 0;
+                } else {
+                    applyDrawToNextPlayer(2);
+                    clearPendingDraw();
+                    return 1;
+                }
 
             case WILD_DRAW_FOUR:
+                // Per requested rule: only Draw Two can stack on Draw Two.
+                // Wild Draw Four does not participate in stacking.
                 applyDrawToNextPlayer(4);
+                clearPendingDraw();
                 return 1;
 
             default:
+                clearPendingDraw();
                 return 0;
         }
     }
@@ -306,25 +319,25 @@ public class GameState {
         }
     }
 
-    private boolean isStackableDrawCard(Card card) {
-    return card != null &&
-           (card.getType() == Card.Type.DRAW_TWO ||
-            card.getType() == Card.Type.WILD_DRAW_FOUR);
-}
     private boolean canPlayDuringStack(Card card) {
-    if (pendingDrawAmount <= 0) {
-        return true;
+        if (pendingDrawAmount <= 0) {
+            return true;
+        }
+
+        if (!rules.isStackingEnabled()) {
+            return false;
+        }
+
+        // Only DRAW_TWO can continue a DRAW_TWO stack.
+        return card != null &&
+               pendingDrawType == Card.Type.DRAW_TWO &&
+               card.getType() == Card.Type.DRAW_TWO;
     }
 
-    if (!rules.isStackingEnabled()) {
-        return false;
+    private void clearPendingDraw() {
+        pendingDrawAmount = 0;
+        pendingDrawType = null;
     }
-
-    // Only same draw type can be stacked.
-    // DRAW_TWO stacks only on DRAW_TWO.
-    // WILD_DRAW_FOUR stacks only on WILD_DRAW_FOUR.
-    return card != null && card.getType() == pendingDrawType;
-}
 
     private void applyPartyCardEffect(Card card, Player player, Player targetPlayer) {
         if (card.getPartyType() == null) {
@@ -513,6 +526,10 @@ public class GameState {
                     Card chosen = ai.chooseCardToPlay(hand, topCard, activeColor, rules.isStackingEnabled());
 
                     aiTurnScheduled = false;
+                    if (pendingDrawAmount > 0 && !canPlayDuringStack(chosen)) {
+                        draw(ai);
+                        return;
+                    }
 
                     if (chosen == null) {
                         draw(ai);
