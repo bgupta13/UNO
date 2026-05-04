@@ -8,6 +8,7 @@ public class LobbyRules {
 
     private boolean stackingEnabled = true;
     private boolean drawUntilValidEnabled = true;
+    private final EnumSet<Card.PartyType> enabledPartyCards = EnumSet.noneOf(Card.PartyType.class);
 
     public boolean isStackingEnabled() {
         return stackingEnabled;
@@ -36,11 +37,13 @@ public class LobbyRules {
     }
 
     public void removePartyCard(Card.PartyType partyType) {
-        enabledPartyCards.remove(partyType);
+        if (partyType != null) {
+            enabledPartyCards.remove(partyType);
+        }
     }
 
     public boolean isPartyCardEnabled(Card.PartyType partyType) {
-        return enabledPartyCards.contains(partyType);
+        return partyType != null && enabledPartyCards.contains(partyType);
     }
 
     public void setPartyCardEnabled(Card.PartyType partyType, boolean enabled) {
