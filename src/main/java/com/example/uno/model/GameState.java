@@ -6,44 +6,25 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
-
-import com.example.uno.service.GameListener;
-import com.example.uno.service.GameService;
 
 public class GameState {
 
     private final List<Player> players;
-    private final Map<Player, Hand> hands = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<Player, Hand> hands = new HashMap<>();
     private final Deck deck;
     private final LobbyRules rules;
 
     private int currentPlayerIndex = 0;
     private int direction = 1;
-    private int pendingDrawAmount = 0;
-    private Card.Type pendingDrawType = null;
 
     private Card topCard;
     private Card.Color activeColor;
-
-    private Card previousTopCardBeforeKarlMarx = null;
+    private Card previousTopCardBeforeKarlMarx;
 
     private Player unoPendingPlayer = null;
     private boolean unoCalled = false;
-    private GameService game;
 
-    private volatile Player winner = null;
-
-    private final ScheduledExecutorService aiExecutor = Executors.newSingleThreadScheduledExecutor();
-
-    private final ReentrantLock aiLock = new ReentrantLock();
-
-    private final List<GameListener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
-
-    private boolean aiTurnScheduled = false;
+    private Player winner = null;
 
     public GameState(List<Player> players, Deck deck, LobbyRules rules) {
         if (players == null || players.isEmpty()) {
@@ -53,7 +34,6 @@ public class GameState {
         this.players = new ArrayList<>(players);
         this.deck = deck;
         this.rules = rules != null ? rules : new LobbyRules();
-
 
         for (Player p : this.players) {
             Hand hand = new Hand();
@@ -65,35 +45,15 @@ public class GameState {
             hands.put(p, hand);
         }
 
-
         do {
             topCard = deck.drawCard();
         } while (topCard.getType() == Card.Type.PARTY);
-
-        
-        deck.addToDiscard(topCard); 
 
         if (topCard.getColor() == Card.Color.WILD) {
             activeColor = Card.Color.RED;
         } else {
             activeColor = topCard.getColor();
         }
-    }
-
-    public Deck getDeck() {
-        return deck;
-    }
-
-    public boolean isWild(Card card) {
-        return card != null &&
-                (card.getType() == Card.Type.WILD ||
-                 card.getType() == Card.Type.WILD_DRAW_FOUR);
-    }
-
-    public boolean needsTarget(Card card) {
-        return card != null &&
-               card.getType() == Card.Type.PARTY &&
-               card.getPartyType() == Card.PartyType.SWAPPER;
     }
 
     public Player getCurrentPlayer() {
@@ -133,16 +93,6 @@ public class GameState {
             return false;
         }
 
-        Hand hand = hands.get(player);
-
-        if (hand == null || !hand.getCards().contains(card)) {
-            return false;
-        }
-
-        if (!canPlayDuringStack(card)) {
-            return false;
-        }
-
         if (requiresChosenColor(card)) {
             if (chosenColor == null) {
                 chosenColor = Card.Color.RED;
@@ -153,8 +103,14 @@ public class GameState {
             }
         }
 
-        hand.removeCard(card);
+        Hand hand = hands.get(player);
 
+        if (hand == null || !hand.getCards().contains(card)) {
+            return false;
+        }
+
+        hand.removeCard(card);
+        
         previousTopCardBeforeKarlMarx = topCard;
 
         deck.addToDiscard(card);
@@ -178,7 +134,6 @@ public class GameState {
             unoPendingPlayer = null;
             unoCalled = false;
             winner = player;
-            notifyGameEnd();
             return true;
         }
 
@@ -188,18 +143,11 @@ public class GameState {
         }
 
         nextTurn(skip);
-        autoResolveDrawStackIfCurrentPlayerCannotStack();
         runAITurnsIfNeeded();
-
-        notifyUpdate();
         return true;
     }
 
     public void draw(Player player) {
-        if (winner != null) {
-            return;
-        }
-
         resolveUnoIfExpiredForNextAction(player);
 
         if (!player.equals(getCurrentPlayer())) {
@@ -208,48 +156,40 @@ public class GameState {
 
         Hand hand = hands.get(player);
 
-        // If there is a Draw Two stack, this player must take the full penalty
-        // unless they have already played a Draw Two through playCard().
-        if (pendingDrawAmount > 0) {
-            for (int i = 0; i < pendingDrawAmount; i++) {
-                hand.addCard(deck.drawCard());
-            }
-
-            clearPendingDraw();
-            nextTurn(0);
-            runAITurnsIfNeeded();
-            return;
-        }
-
-        Card drawn = deck.drawCard();
-        hand.addCard(drawn);
-
-        if (isValidMove(drawn, topCard, activeColor)) {
-            Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
-            playCard(player, drawn, chosenColor);
-            return;
-        }
-
         if (rules.isDrawUntilValidEnabled()) {
             while (true) {
-                drawn = deck.drawCard();
+                Card drawn = deck.drawCard();
                 hand.addCard(drawn);
 
                 if (isValidMove(drawn, topCard, activeColor)) {
                     Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
                     playCard(player, drawn, chosenColor);
+
+                    runAITurnsIfNeeded();   // ← ADD THIS
                     return;
                 }
             }
+        } else {
+            Card drawn = deck.drawCard();
+            hand.addCard(drawn);
+
+            if (isValidMove(drawn, topCard, activeColor)) {
+                Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
+                playCard(player, drawn, chosenColor);
+
+                runAITurnsIfNeeded();   // ← ADD THIS
+                return;
+            }
+
+            nextTurn(0);
+            runAITurnsIfNeeded();       // ← ADD THIS
         }
-
-        nextTurn(0);
-        runAITurnsIfNeeded();
-        notifyUpdate();
     }
-
+    
     private Card.Color getDrawnCardChosenColor(Player player, Card drawn, Hand hand) {
-        if (!requiresChosenColor(drawn)) {
+        if (drawn.getType() != Card.Type.WILD &&
+            drawn.getType() != Card.Type.WILD_DRAW_FOUR &&
+            drawn.getType() != Card.Type.PARTY) {
             return null;
         }
 
@@ -257,6 +197,8 @@ public class GameState {
             return ((AIPlayer) player).chooseWildColor(hand);
         }
 
+        // Temporary default for human players.
+        // Replace with UI color selection later.
         return Card.Color.RED;
     }
 
@@ -275,7 +217,6 @@ public class GameState {
             unoPendingPlayer = null;
             unoCalled = false;
         }
-        notifyUpdate();
 
         return true;
     }
@@ -300,34 +241,21 @@ public class GameState {
     private int applyCardEffect(Card card) {
         switch (card.getType()) {
             case SKIP:
-                clearPendingDraw();
                 return 1;
 
             case REVERSE:
-                clearPendingDraw();
                 direction *= -1;
                 return players.size() == 2 ? 1 : 0;
 
             case DRAW_TWO:
-                if (rules.isStackingEnabled()) {
-                    pendingDrawAmount += 2;
-                    pendingDrawType = Card.Type.DRAW_TWO;
-                    return 0;
-                } else {
-                    applyDrawToNextPlayer(2);
-                    clearPendingDraw();
-                    return 1;
-                }
+                applyDrawToNextPlayer(2);
+                return 1;
 
             case WILD_DRAW_FOUR:
-                // Per requested rule: only Draw Two can stack on Draw Two.
-                // Wild Draw Four does not participate in stacking.
                 applyDrawToNextPlayer(4);
-                clearPendingDraw();
                 return 1;
 
             default:
-                clearPendingDraw();
                 return 0;
         }
     }
@@ -344,85 +272,11 @@ public class GameState {
         }
     }
 
-    private boolean canPlayDuringStack(Card card) {
-        if (pendingDrawAmount <= 0) {
-            return true;
-        }
-
-        if (!rules.isStackingEnabled()) {
-            return false;
-        }
-
-        // Only DRAW_TWO can continue a DRAW_TWO stack.
-        return card != null &&
-               pendingDrawType == Card.Type.DRAW_TWO &&
-               card.getType() == Card.Type.DRAW_TWO;
-    }
-
-        private boolean currentPlayerHasStackableDrawCard() {
-        if (pendingDrawAmount <= 0) {
-            return false;
-        }
-
-        Hand hand = hands.get(getCurrentPlayer());
-
-        if (hand == null) {
-            return false;
-        }
-
-        for (Card card : hand.getCards()) {
-            if (canPlayDuringStack(card)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * If a DRAW_TWO stack reaches a player who cannot continue the stack,
-     * that player automatically draws the full pending amount and the turn advances.
-     */
-    private void autoResolveDrawStackIfCurrentPlayerCannotStack() {
-        if (winner != null || pendingDrawAmount <= 0) {
-            return;
-        }
-
-        if (currentPlayerHasStackableDrawCard()) {
-            return;
-        }
-
-        Player penalizedPlayer = getCurrentPlayer();
-        Hand hand = hands.get(penalizedPlayer);
-
-        if (hand == null) {
-            clearPendingDraw();
-            nextTurn(0);
-            return;
-        }
-
-        for (int i = 0; i < pendingDrawAmount; i++) {
-            hand.addCard(deck.drawCard());
-        }
-
-        clearPendingDraw();
-        nextTurn(0);
-    }
-
-    private void clearPendingDraw() {
-        pendingDrawAmount = 0;
-        pendingDrawType = null;
-    }
-
     private void applyPartyCardEffect(Card card, Player player, Player targetPlayer) {
-        if (card.getPartyType() == null) {
-            return;
-        }
-
         switch (card.getPartyType()) {
             case KARL_MARX:
                 applyKarlMarx();
-                scheduleKarlMarxTopCardRemoval();
+                scheduleKarlMarxRemoval();
                 break;
 
             case SWAPPER:
@@ -453,35 +307,6 @@ public class GameState {
             hands.get(current).addCard(card);
             playerIndex = (playerIndex + 1) % players.size();
         }
-    }
-
-    private void scheduleKarlMarxTopCardRemoval() {
-        final Card oldTop = previousTopCardBeforeKarlMarx;
-
-        new Thread(() -> {
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
-            synchronized (GameState.this) {
-                if (topCard != null &&
-                    topCard.getType() == Card.Type.PARTY &&
-                    topCard.getPartyType() == Card.PartyType.KARL_MARX &&
-                    oldTop != null) {
-
-                    topCard = oldTop;
-
-                    if (topCard.getColor() == Card.Color.WILD) {
-                        activeColor = Card.Color.RED;
-                    } else {
-                        activeColor = topCard.getColor();
-                    }
-                }
-            }
-        }).start();
     }
 
     private void applySwapper(Player player, Player targetPlayer) {
@@ -538,14 +363,14 @@ public class GameState {
             return true;
         }
 
-        return played.getType() == top.getType() && played.getType() != Card.Type.NUMBER;
+        return played.getType() == top.getType();
     }
 
     public static boolean isValidMove(Card played, Card top) {
         return isValidMove(played, top, top.getColor());
     }
 
-    public boolean requiresChosenColor(Card card) {
+    private boolean requiresChosenColor(Card card) {
         return card.getType() == Card.Type.WILD ||
                card.getType() == Card.Type.WILD_DRAW_FOUR ||
                card.getType() == Card.Type.PARTY;
@@ -559,68 +384,45 @@ public class GameState {
     }
 
     public void runAITurnsIfNeeded() {
-        if (winner != null) return;
+        int safety = 0;
 
-        Player current = getCurrentPlayer();
-
-        if (current instanceof AIPlayer) {
+        while (winner == null && getCurrentPlayer() instanceof AIPlayer && safety < players.size() * 5) {
             performAITurn();
+            safety++;
         }
-
-        aiTurnScheduled = true;
-        performAITurn();
     }
 
     public void performAITurn() {
         Player current = getCurrentPlayer();
 
         if (!(current instanceof AIPlayer)) {
-            aiTurnScheduled = false;
             return;
         }
 
-        
+        AIPlayer ai = (AIPlayer) current;
+        Hand hand = hands.get(ai);
 
-        aiExecutor.schedule(() -> {
-            try {
-                AIPlayer ai = (AIPlayer) current;
+        Card chosen = ai.chooseCardToPlay(hand, topCard, activeColor, rules.isStackingEnabled());
 
-                Hand hand = hands.get(ai);
+        if (chosen == null) {
+            draw(ai);
+            return;
+        }
 
-                Card chosen = ai.chooseCardToPlay(
-                        hand,
-                        topCard,
-                        activeColor,
-                        rules.isStackingEnabled()
-                );
+        Card.Color chosenColor = null;
 
-                    Card chosen = ai.chooseCardToPlay(hand, topCard, activeColor, rules.isStackingEnabled());
+        if (requiresChosenColor(chosen)) {
+            chosenColor = ai.chooseWildColor(hand);
+        }
 
-                    aiTurnScheduled = false;
-                    if (pendingDrawAmount > 0 && !canPlayDuringStack(chosen)) {
-                        draw(ai);
-                        return;
-                    }
+        Player target = null;
 
-                    if (chosen == null) {
-                        draw(ai);
-                        return;
-                    }
+        if (chosen.getType() == Card.Type.PARTY &&
+            chosen.getPartyType() == Card.PartyType.SWAPPER) {
+            target = chooseRandomTarget(ai);
+        }
 
-                    Card.Color chosenColor = null;
-
-                    if (requiresChosenColor(chosen)) {
-                        chosenColor = ai.chooseWildColor(hand);
-                    }
-
-                    Player target = null;
-
-            } finally {
-                aiLock.unlock();
-            }
-        }, 1200, TimeUnit.MILLISECONDS);
-
-        
+        playCard(ai, chosen, chosenColor, target);
     }
 
     private Player chooseRandomTarget(Player current) {
@@ -637,6 +439,31 @@ public class GameState {
         }
 
         return possibleTargets.get(new Random().nextInt(possibleTargets.size()));
+    }
+    
+    private void scheduleKarlMarxRemoval() {
+        new Thread(() -> {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            synchronized (this) {
+                if (topCard != null &&
+                    topCard.getType() == Card.Type.PARTY &&
+                    topCard.getPartyType() == Card.PartyType.KARL_MARX) {
+
+                    deck.removeTopDiscard();
+
+                    if (previousTopCardBeforeKarlMarx != null) {
+                        topCard = previousTopCardBeforeKarlMarx;
+                        activeColor = topCard.getColor();
+                    }
+                }
+            }
+        }).start();
     }
 
     public Map<Player, Hand> getHands() {
@@ -678,27 +505,4 @@ public class GameState {
     public boolean isGameOver() {
         return winner != null;
     }
-
-    // Listeners
-
-    public void addListener(GameListener listener) {
-    listeners.add(listener);
-}
-
-    public void removeListener(GameListener listener) {
-        listeners.remove(listener);
-    }
-
-    private void notifyUpdate() {
-    for (GameListener l : listeners) {
-        l.onGameUpdated(this);
-    }
-}
-
-    private void notifyGameEnd() {
-        for (GameListener l : listeners) {
-            l.onGameEnded(this);
-        }
-    }
-
 }
