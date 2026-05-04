@@ -45,7 +45,7 @@ public class Deck {
             }
         }
 
-        for (int w = 0; w < 4; w++) {
+        for (int w = 0; w < 3; w++) {
             cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD));
             cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD_DRAW_FOUR));
         }

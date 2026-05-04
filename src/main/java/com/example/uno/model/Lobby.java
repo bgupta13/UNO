@@ -57,8 +57,12 @@ public class Lobby {
         return true;
     }
 
-    public synchronized void removePlayer(Player p) {
-        players.remove(p);
+    public synchronized boolean removePlayer(Player p) {
+        if (!p.equals(host)) {
+            players.remove(p);
+            return true;
+        }
+        return false;
     }
 
     public synchronized List<Player> getPlayers() {

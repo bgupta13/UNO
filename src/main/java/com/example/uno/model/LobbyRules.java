@@ -12,12 +12,6 @@ public class LobbyRules {
     private boolean drawUntilValidEnabled;
     private final EnumSet<Card.PartyType> enabledPartyCards = EnumSet.noneOf(Card.PartyType.class);
 
-/*     public LobbyRules() {
-        this.stackingEnabled = stackingEnabled;S
-        this.drawUntilValidEnabled = true;
-        this.enabledPartyCards = EnumSet.noneOf(Card.PartyType.class);
-    } */
-
     public boolean isStackingEnabled() {
         return stackingEnabled;
     }
