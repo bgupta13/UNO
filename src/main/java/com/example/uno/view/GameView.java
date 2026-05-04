@@ -190,6 +190,11 @@ public class GameView extends VerticalLayout implements BeforeEnterObserver {
         centerArea.setJustifyContentMode(JustifyContentMode.CENTER);
         centerArea.setAlignItems(Alignment.CENTER);
         centerArea.setSpacing(true);
+        centerArea.getStyle().set("margin-top", "20px");
+
+        VerticalLayout drawPile = new VerticalLayout();
+        drawPile.setAlignItems(FlexComponent.Alignment.CENTER);
+        drawPile.setSpacing(false);
 
         // Images for draw
         Image drawDeckImage = new Image("frontend/images/cards/BACK.PNG", "Draw Deck");
@@ -368,6 +373,7 @@ public class GameView extends VerticalLayout implements BeforeEnterObserver {
                     
                     currentGame.playCard(player, card, color, target);
                     playerDialog.close();
+                    formatPage();
                 });
                 
                 targetLayout.add(targetButton);

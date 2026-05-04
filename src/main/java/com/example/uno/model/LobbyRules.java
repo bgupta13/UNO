@@ -4,13 +4,10 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
-import com.example.uno.model.Card.PartyType;
-
 public class LobbyRules {
 
-    private boolean stackingEnabled;
-    private boolean drawUntilValidEnabled;
-    private final EnumSet<Card.PartyType> enabledPartyCards = EnumSet.noneOf(Card.PartyType.class);
+    private boolean stackingEnabled = true;
+    private boolean drawUntilValidEnabled = true;
 
     public boolean isStackingEnabled() {
         return stackingEnabled;
@@ -61,4 +58,3 @@ public class LobbyRules {
                ", partyCards=" + enabledPartyCards;
     }
 }
-
