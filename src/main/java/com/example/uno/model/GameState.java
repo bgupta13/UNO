@@ -168,6 +168,7 @@ public class GameState {
         }
 
         nextTurn(skip);
+        autoResolveDrawStackIfCurrentPlayerCannotStack();
         runAITurnsIfNeeded();
         return true;
     }
@@ -332,6 +333,56 @@ public class GameState {
         return card != null &&
                pendingDrawType == Card.Type.DRAW_TWO &&
                card.getType() == Card.Type.DRAW_TWO;
+    }
+
+        private boolean currentPlayerHasStackableDrawCard() {
+        if (pendingDrawAmount <= 0) {
+            return false;
+        }
+
+        Hand hand = hands.get(getCurrentPlayer());
+
+        if (hand == null) {
+            return false;
+        }
+
+        for (Card card : hand.getCards()) {
+            if (canPlayDuringStack(card)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * If a DRAW_TWO stack reaches a player who cannot continue the stack,
+     * that player automatically draws the full pending amount and the turn advances.
+     */
+    private void autoResolveDrawStackIfCurrentPlayerCannotStack() {
+        if (winner != null || pendingDrawAmount <= 0) {
+            return;
+        }
+
+        if (currentPlayerHasStackableDrawCard()) {
+            return;
+        }
+
+        Player penalizedPlayer = getCurrentPlayer();
+        Hand hand = hands.get(penalizedPlayer);
+
+        if (hand == null) {
+            clearPendingDraw();
+            nextTurn(0);
+            return;
+        }
+
+        for (int i = 0; i < pendingDrawAmount; i++) {
+            hand.addCard(deck.drawCard());
+        }
+
+        clearPendingDraw();
+        nextTurn(0);
     }
 
     private void clearPendingDraw() {
