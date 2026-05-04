@@ -20,10 +20,14 @@ public class GameState {
     private Card topCard;
     private Card.Color activeColor;
 
+    private Card previousTopCardBeforeKarlMarx = null;
+
     private Player unoPendingPlayer = null;
     private boolean unoCalled = false;
 
     private Player winner = null;
+
+    private boolean aiTurnScheduled = false;
 
     public GameState(List<Player> players, Deck deck, LobbyRules rules) {
         if (players == null || players.isEmpty()) {
@@ -60,17 +64,15 @@ public class GameState {
     }
 
     public boolean isWild(Card card) {
-        if (card.getType() == Card.Type.WILD ||
-            card.getType() == Card.Type.WILD_DRAW_FOUR) {
-            return true;
-        }
-        return false;
+        return card != null &&
+                (card.getType() == Card.Type.WILD ||
+                 card.getType() == Card.Type.WILD_DRAW_FOUR);
     }
+
     public boolean needsTarget(Card card) {
-        if (card.getPartyType() == Card.PartyType.SWAPPER) {
-            return true;
-        }
-        return false;
+        return card != null &&
+               card.getType() == Card.Type.PARTY &&
+               card.getPartyType() == Card.PartyType.SWAPPER;
     }
 
     public Player getCurrentPlayer() {
@@ -97,19 +99,16 @@ public class GameState {
 
     public boolean playCard(Player player, Card card, Card.Color chosenColor, Player targetPlayer) {
         if (winner != null) {
-            System.out.println("i failed on line 101");
             return false;
         }
 
         resolveUnoIfExpiredForNextAction(player);
 
         if (!player.equals(getCurrentPlayer())) {
-            System.out.println("i failed on line 108");
             return false;
         }
 
         if (card == null || !isValidMove(card, topCard, activeColor)) {
-            System.out.println("i failed on line 113");
             return false;
         }
 
@@ -119,7 +118,6 @@ public class GameState {
             }
 
             if (!isPlayableColor(chosenColor)) {
-                System.out.println("i failed on line 123");
                 return false;
             }
         }
@@ -127,14 +125,12 @@ public class GameState {
         Hand hand = hands.get(player);
 
         if (hand == null || !hand.getCards().contains(card)) {
-            
-            System.out.println("i failed on line 130");
-            if(hand == null) { System.out.println("my hand is null");}
-            else {System.out.println("my hand does not have this card");}
             return false;
         }
 
         hand.removeCard(card);
+
+        previousTopCardBeforeKarlMarx = topCard;
 
         deck.addToDiscard(card);
         topCard = card;
@@ -162,7 +158,6 @@ public class GameState {
 
         if (updatedHand.size() == 1) {
             unoPendingPlayer = player;
-            System.out.println("i failed on line 162");
             unoCalled = false;
         }
 
@@ -190,15 +185,53 @@ public class GameState {
                 hand.addCard(drawn);
 
                 if (isValidMove(drawn, topCard, activeColor)) {
-                    break;
+                    Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
+                    Player target = getDrawnCardTarget(player, drawn);
+                    playCard(player, drawn, chosenColor, target);
+                    return;
                 }
             }
         } else {
-            hand.addCard(deck.drawCard());
+            Card drawn = deck.drawCard();
+            hand.addCard(drawn);
+
+            if (isValidMove(drawn, topCard, activeColor)) {
+                Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
+                Player target = getDrawnCardTarget(player, drawn);
+                playCard(player, drawn, chosenColor, target);
+                return;
+            }
+
+            nextTurn(0);
+            runAITurnsIfNeeded();
+        }
+    }
+
+    private Card.Color getDrawnCardChosenColor(Player player, Card drawn, Hand hand) {
+        if (!requiresChosenColor(drawn)) {
+            return null;
         }
 
-        nextTurn(0);
-        runAITurnsIfNeeded();
+        if (player instanceof AIPlayer) {
+            return ((AIPlayer) player).chooseWildColor(hand);
+        }
+
+        return Card.Color.RED;
+    }
+
+    private Player getDrawnCardTarget(Player player, Card drawn) {
+        if (drawn != null &&
+            drawn.getType() == Card.Type.PARTY &&
+            drawn.getPartyType() == Card.PartyType.SWAPPER) {
+
+            if (player instanceof AIPlayer) {
+                return chooseRandomTarget(player);
+            }
+
+            return null;
+        }
+
+        return null;
     }
 
     public boolean callUno(Player caller) {
@@ -279,6 +312,7 @@ public class GameState {
         switch (card.getPartyType()) {
             case KARL_MARX:
                 applyKarlMarx();
+                scheduleKarlMarxTopCardRemoval();
                 break;
 
             case SWAPPER:
@@ -309,6 +343,35 @@ public class GameState {
             hands.get(current).addCard(card);
             playerIndex = (playerIndex + 1) % players.size();
         }
+    }
+
+    private void scheduleKarlMarxTopCardRemoval() {
+        final Card oldTop = previousTopCardBeforeKarlMarx;
+
+        new Thread(() -> {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            synchronized (GameState.this) {
+                if (topCard != null &&
+                    topCard.getType() == Card.Type.PARTY &&
+                    topCard.getPartyType() == Card.PartyType.KARL_MARX &&
+                    oldTop != null) {
+
+                    topCard = oldTop;
+
+                    if (topCard.getColor() == Card.Color.WILD) {
+                        activeColor = Card.Color.RED;
+                    } else {
+                        activeColor = topCard.getColor();
+                    }
+                }
+            }
+        }).start();
     }
 
     private void applySwapper(Player player, Player targetPlayer) {
@@ -373,9 +436,10 @@ public class GameState {
     }
 
     private boolean requiresChosenColor(Card card) {
-        return card.getType() == Card.Type.WILD ||
-               card.getType() == Card.Type.WILD_DRAW_FOUR ||
-               card.getType() == Card.Type.PARTY;
+        return card != null &&
+               (card.getType() == Card.Type.WILD ||
+                card.getType() == Card.Type.WILD_DRAW_FOUR ||
+                card.getType() == Card.Type.PARTY);
     }
 
     private boolean isPlayableColor(Card.Color color) {
@@ -386,18 +450,28 @@ public class GameState {
     }
 
     public void runAITurnsIfNeeded() {
-        int safety = 0;
-
-        while (winner == null && getCurrentPlayer() instanceof AIPlayer && safety < players.size() * 5) {
-            performAITurn();
-            safety++;
+        if (winner != null) {
+            return;
         }
+
+        if (!(getCurrentPlayer() instanceof AIPlayer)) {
+            aiTurnScheduled = false;
+            return;
+        }
+
+        if (aiTurnScheduled) {
+            return;
+        }
+
+        aiTurnScheduled = true;
+        performAITurn();
     }
 
     public void performAITurn() {
         Player current = getCurrentPlayer();
 
         if (!(current instanceof AIPlayer)) {
+            aiTurnScheduled = false;
             return;
         }
 
@@ -405,39 +479,44 @@ public class GameState {
             try {
                 Thread.sleep(2000);
 
-                AIPlayer ai = (AIPlayer) current;
-        
-                Hand hand = hands.get(ai);
+                synchronized (GameState.this) {
+                    if (winner != null || !current.equals(getCurrentPlayer())) {
+                        aiTurnScheduled = false;
+                        return;
+                    }
 
-                Card chosen = ai.chooseCardToPlay(hand, topCard, activeColor, rules.isStackingEnabled());
+                    AIPlayer ai = (AIPlayer) current;
+                    Hand hand = hands.get(ai);
 
-                if (chosen == null) {
-                    draw(ai);
-                    return;
+                    Card chosen = ai.chooseCardToPlay(hand, topCard, activeColor, rules.isStackingEnabled());
+
+                    aiTurnScheduled = false;
+
+                    if (chosen == null) {
+                        draw(ai);
+                        return;
+                    }
+
+                    Card.Color chosenColor = null;
+
+                    if (requiresChosenColor(chosen)) {
+                        chosenColor = ai.chooseWildColor(hand);
+                    }
+
+                    Player target = null;
+
+                    if (chosen.getType() == Card.Type.PARTY &&
+                        chosen.getPartyType() == Card.PartyType.SWAPPER) {
+                        target = chooseRandomTarget(ai);
+                    }
+
+                    playCard(ai, chosen, chosenColor, target);
                 }
-
-                Card.Color chosenColor = null;
-
-                if (requiresChosenColor(chosen)) {
-                    chosenColor = ai.chooseWildColor(hand);
-                }
-
-                Player target = null;
-
-                if (chosen.getType() == Card.Type.PARTY &&
-                    chosen.getPartyType() == Card.PartyType.SWAPPER) {
-                    target = chooseRandomTarget(ai);
-                }
-
-                playCard(ai, chosen, chosenColor, target);
-
-
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                Thread.currentThread().interrupt();
+                aiTurnScheduled = false;
             }
         }).start();
-
-        
     }
 
     private Player chooseRandomTarget(Player current) {
