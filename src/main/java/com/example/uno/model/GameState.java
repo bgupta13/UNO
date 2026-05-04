@@ -16,7 +16,9 @@ public class GameState {
 
     private int currentPlayerIndex = 0;
     private int direction = 1;
-
+    private int pendingDrawAmount = 0;
+    
+    private Card.Type pendingDrawType = null;
     private Card topCard;
     private Card.Color activeColor;
 
@@ -303,6 +305,26 @@ public class GameState {
             nextHand.addCard(deck.drawCard());
         }
     }
+
+    private boolean isStackableDrawCard(Card card) {
+    return card != null &&
+           (card.getType() == Card.Type.DRAW_TWO ||
+            card.getType() == Card.Type.WILD_DRAW_FOUR);
+}
+    private boolean canPlayDuringStack(Card card) {
+    if (pendingDrawAmount <= 0) {
+        return true;
+    }
+
+    if (!rules.isStackingEnabled()) {
+        return false;
+    }
+
+    // Only same draw type can be stacked.
+    // DRAW_TWO stacks only on DRAW_TWO.
+    // WILD_DRAW_FOUR stacks only on WILD_DRAW_FOUR.
+    return card != null && card.getType() == pendingDrawType;
+}
 
     private void applyPartyCardEffect(Card card, Player player, Player targetPlayer) {
         if (card.getPartyType() == null) {
