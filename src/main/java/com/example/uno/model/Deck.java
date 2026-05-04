@@ -21,43 +21,52 @@ public class Deck {
         shuffle();
     }
 
-    private void buildCardPool(Collection<Card.PartyType> partyCards) {
-        Card.Color[] colors = {
-                Card.Color.RED,
-                Card.Color.BLUE,
-                Card.Color.GREEN,
-                Card.Color.YELLOW
-        };
+  private void buildCardPool(Collection<Card.PartyType> partyCards) {
+    Card.Color[] colors = {
+            Card.Color.RED,
+            Card.Color.BLUE,
+            Card.Color.GREEN,
+            Card.Color.YELLOW
+    };
 
-        for (Card.Color color : colors) {
-            for (int number = 0; number <= 9; number++) {
-                for (int w = 0; w < 8; w++) {
-                    cardPool.add(new Card(color, number));
-                }
-            }
+    // Standard UNO-style number distribution:
+    // one 0 per color, two of each 1-9 per color
+    for (Card.Color color : colors) {
+        cardPool.add(new Card(color, 0));
+
+        for (int number = 1; number <= 9; number++) {
+            cardPool.add(new Card(color, number));
+            cardPool.add(new Card(color, number));
         }
+    }
 
-        for (Card.Color color : colors) {
-            for (int w = 0; w < 3; w++) {
-                cardPool.add(new Card(color, Card.Type.SKIP));
-                cardPool.add(new Card(color, Card.Type.REVERSE));
-                cardPool.add(new Card(color, Card.Type.DRAW_TWO));
-            }
+    // Standard UNO-style action cards:
+    // two skips, two reverses, two draw twos per color
+    for (Card.Color color : colors) {
+        for (int w = 0; w < 2; w++) {
+            cardPool.add(new Card(color, Card.Type.SKIP));
+            cardPool.add(new Card(color, Card.Type.REVERSE));
+            cardPool.add(new Card(color, Card.Type.DRAW_TWO));
         }
+    }
 
-        for (int w = 0; w < 4; w++) {
-            cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD));
-            cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD_DRAW_FOUR));
-        }
+    // Standard UNO-style wilds:
+    // four wilds and four wild draw fours
+    for (int w = 0; w < 4; w++) {
+        cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD));
+        cardPool.add(new Card(Card.Color.WILD, Card.Type.WILD_DRAW_FOUR));
+    }
 
-        if (partyCards != null) {
-            for (Card.PartyType partyType : partyCards) {
-                for (int w = 0; w < 100; w++) {
-                    cardPool.add(new Card(partyType));
-                }
+    // Party cards:
+    // up to about 5% of the pool when all three are enabled
+    if (partyCards != null) {
+        for (Card.PartyType partyType : partyCards) {
+            for (int w = 0; w < 2; w++) {
+                cardPool.add(new Card(partyType));
             }
         }
     }
+}
 
     private void buildInitialDeck() {
         for (int i = 0; i < 100; i++) {
