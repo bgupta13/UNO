@@ -9,9 +9,6 @@ public class LobbyRules {
     private boolean stackingEnabled = true;
     private boolean drawUntilValidEnabled = true;
 
-    private final EnumSet<Card.PartyType> enabledPartyCards =
-            EnumSet.noneOf(Card.PartyType.class);
-
     public boolean isStackingEnabled() {
         return stackingEnabled;
     }

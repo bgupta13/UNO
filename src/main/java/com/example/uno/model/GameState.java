@@ -6,11 +6,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+
+import com.example.uno.service.GameListener;
+import com.example.uno.service.GameService;
 
 public class GameState {
 
     private final List<Player> players;
-    private final Map<Player, Hand> hands = new HashMap<>();
+    private final Map<Player, Hand> hands = new java.util.concurrent.ConcurrentHashMap<>();
     private final Deck deck;
     private final LobbyRules rules;
 
@@ -26,8 +33,15 @@ public class GameState {
 
     private Player unoPendingPlayer = null;
     private boolean unoCalled = false;
+    private GameService game;
 
-    private Player winner = null;
+    private volatile Player winner = null;
+
+    private final ScheduledExecutorService aiExecutor = Executors.newSingleThreadScheduledExecutor();
+
+    private final ReentrantLock aiLock = new ReentrantLock();
+
+    private final List<GameListener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private boolean aiTurnScheduled = false;
 
@@ -40,6 +54,7 @@ public class GameState {
         this.deck = deck;
         this.rules = rules != null ? rules : new LobbyRules();
 
+
         for (Player p : this.players) {
             Hand hand = new Hand();
 
@@ -50,9 +65,13 @@ public class GameState {
             hands.put(p, hand);
         }
 
+
         do {
             topCard = deck.drawCard();
         } while (topCard.getType() == Card.Type.PARTY);
+
+        
+        deck.addToDiscard(topCard); 
 
         if (topCard.getColor() == Card.Color.WILD) {
             activeColor = Card.Color.RED;
@@ -159,6 +178,7 @@ public class GameState {
             unoPendingPlayer = null;
             unoCalled = false;
             winner = player;
+            notifyGameEnd();
             return true;
         }
 
@@ -170,6 +190,8 @@ public class GameState {
         nextTurn(skip);
         autoResolveDrawStackIfCurrentPlayerCannotStack();
         runAITurnsIfNeeded();
+
+        notifyUpdate();
         return true;
     }
 
@@ -223,6 +245,7 @@ public class GameState {
 
         nextTurn(0);
         runAITurnsIfNeeded();
+        notifyUpdate();
     }
 
     private Card.Color getDrawnCardChosenColor(Player player, Card drawn, Hand hand) {
@@ -252,6 +275,7 @@ public class GameState {
             unoPendingPlayer = null;
             unoCalled = false;
         }
+        notifyUpdate();
 
         return true;
     }
@@ -521,11 +545,10 @@ public class GameState {
         return isValidMove(played, top, top.getColor());
     }
 
-    private boolean requiresChosenColor(Card card) {
-        return card != null &&
-               (card.getType() == Card.Type.WILD ||
-                card.getType() == Card.Type.WILD_DRAW_FOUR ||
-                card.getType() == Card.Type.PARTY);
+    public boolean requiresChosenColor(Card card) {
+        return card.getType() == Card.Type.WILD ||
+               card.getType() == Card.Type.WILD_DRAW_FOUR ||
+               card.getType() == Card.Type.PARTY;
     }
 
     private boolean isPlayableColor(Card.Color color) {
@@ -536,17 +559,12 @@ public class GameState {
     }
 
     public void runAITurnsIfNeeded() {
-        if (winner != null) {
-            return;
-        }
+        if (winner != null) return;
 
-        if (!(getCurrentPlayer() instanceof AIPlayer)) {
-            aiTurnScheduled = false;
-            return;
-        }
+        Player current = getCurrentPlayer();
 
-        if (aiTurnScheduled) {
-            return;
+        if (current instanceof AIPlayer) {
+            performAITurn();
         }
 
         aiTurnScheduled = true;
@@ -561,18 +579,20 @@ public class GameState {
             return;
         }
 
-        new Thread(() -> {
+        
+
+        aiExecutor.schedule(() -> {
             try {
-                Thread.sleep(2000);
+                AIPlayer ai = (AIPlayer) current;
 
-                synchronized (GameState.this) {
-                    if (winner != null || !current.equals(getCurrentPlayer())) {
-                        aiTurnScheduled = false;
-                        return;
-                    }
+                Hand hand = hands.get(ai);
 
-                    AIPlayer ai = (AIPlayer) current;
-                    Hand hand = hands.get(ai);
+                Card chosen = ai.chooseCardToPlay(
+                        hand,
+                        topCard,
+                        activeColor,
+                        rules.isStackingEnabled()
+                );
 
                     Card chosen = ai.chooseCardToPlay(hand, topCard, activeColor, rules.isStackingEnabled());
 
@@ -595,18 +615,12 @@ public class GameState {
 
                     Player target = null;
 
-                    if (chosen.getType() == Card.Type.PARTY &&
-                        chosen.getPartyType() == Card.PartyType.SWAPPER) {
-                        target = chooseRandomTarget(ai);
-                    }
-
-                    playCard(ai, chosen, chosenColor, target);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                aiTurnScheduled = false;
+            } finally {
+                aiLock.unlock();
             }
-        }).start();
+        }, 1200, TimeUnit.MILLISECONDS);
+
+        
     }
 
     private Player chooseRandomTarget(Player current) {
@@ -664,4 +678,27 @@ public class GameState {
     public boolean isGameOver() {
         return winner != null;
     }
+
+    // Listeners
+
+    public void addListener(GameListener listener) {
+    listeners.add(listener);
+}
+
+    public void removeListener(GameListener listener) {
+        listeners.remove(listener);
+    }
+
+    private void notifyUpdate() {
+    for (GameListener l : listeners) {
+        l.onGameUpdated(this);
+    }
+}
+
+    private void notifyGameEnd() {
+        for (GameListener l : listeners) {
+            l.onGameEnded(this);
+        }
+    }
+
 }

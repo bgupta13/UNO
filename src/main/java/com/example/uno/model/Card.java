@@ -96,6 +96,23 @@ public class Card {
         return type == Type.DRAW_TWO || type == Type.WILD_DRAW_FOUR;
     }
 
+    public String getImageName(Card.Color activeColor) {
+        if (type == Type.NUMBER) {
+            return color + "_" + number + ".PNG";
+        }
+
+        if (type == Type.PARTY) {
+            return activeColor + "_" + type + "_" + partyType + ".PNG";
+        }
+
+        if (type == Type.WILD || type == Type.WILD_DRAW_FOUR) {
+            return activeColor + "_" + type + ".PNG";
+        }
+
+        return color + "_" + type + ".PNG";
+    }
+
+
     @Override
     public String toString() {
         if (type == Type.NUMBER) {
