@@ -6,6 +6,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import com.example.uno.service.GameListener;
 
 public class GameState {
 
@@ -13,15 +16,11 @@ public class GameState {
     private final Map<Player, Hand> hands = new HashMap<>();
     private final Deck deck;
     private final LobbyRules rules;
+    private final List<GameListener> listeners = new CopyOnWriteArrayList<>();
 
     private int currentPlayerIndex = 0;
     private int direction = 1;
 
-    /*
-     * Draw Two stacking state:
-     * - Only DRAW_TWO may be stacked.
-     * - If the next player has no DRAW_TWO, the pending draw is applied automatically.
-     */
     private int pendingDrawAmount = 0;
     private Card.Type pendingDrawType = null;
 
@@ -33,10 +32,6 @@ public class GameState {
     private boolean unoCalled = false;
 
     private Player winner = null;
-
-    /*
-     * Prevents multiple AI threads from being scheduled for the same AI turn.
-     */
     private boolean aiTurnScheduled = false;
 
     public GameState(List<Player> players, Deck deck, LobbyRules rules) {
@@ -62,6 +57,8 @@ public class GameState {
             topCard = deck.drawCard();
         } while (topCard.getType() == Card.Type.PARTY);
 
+        deck.addToDiscard(topCard);
+
         if (topCard.getColor() == Card.Color.WILD) {
             activeColor = Card.Color.RED;
         } else {
@@ -69,20 +66,30 @@ public class GameState {
         }
     }
 
+    public void addListener(GameListener listener) {
+        if (listener != null) {
+            listeners.add(listener);
+        }
+    }
+
+    public void removeListener(GameListener listener) {
+        listeners.remove(listener);
+    }
+
+    private void notifyGameUpdated() {
+        for (GameListener listener : listeners) {
+            listener.onGameUpdated(this);
+        }
+    }
+
+    private void notifyGameEnded() {
+        for (GameListener listener : listeners) {
+            listener.onGameEnded(this);
+        }
+    }
+
     public Deck getDeck() {
         return deck;
-    }
-
-    public boolean isWild(Card card) {
-        return card != null &&
-                (card.getType() == Card.Type.WILD ||
-                 card.getType() == Card.Type.WILD_DRAW_FOUR);
-    }
-
-    public boolean needsTarget(Card card) {
-        return card != null &&
-               card.getType() == Card.Type.PARTY &&
-               card.getPartyType() == Card.PartyType.SWAPPER;
     }
 
     public Player getCurrentPlayer() {
@@ -122,10 +129,6 @@ public class GameState {
             return false;
         }
 
-        /*
-         * If a Draw Two stack is pending, the only playable card is another DRAW_TWO.
-         * This prevents "any valid card" from being used to escape the stack.
-         */
         if (!canPlayDuringStack(card)) {
             return false;
         }
@@ -171,6 +174,8 @@ public class GameState {
             unoPendingPlayer = null;
             unoCalled = false;
             winner = player;
+            notifyGameUpdated();
+            notifyGameEnded();
             return true;
         }
 
@@ -180,13 +185,8 @@ public class GameState {
         }
 
         nextTurn(skip);
-
-        /*
-         * If a DRAW_TWO was played and the next player cannot stack, apply the
-         * accumulated draw automatically instead of making them click the draw pile.
-         */
-        resolvePendingDrawStackIfCurrentPlayerCannotStack();
-
+        resolvePendingDrawAutomaticallyIfNeeded();
+        notifyGameUpdated();
         runAITurnsIfNeeded();
         return true;
     }
@@ -204,12 +204,11 @@ public class GameState {
 
         Hand hand = hands.get(player);
 
-        /*
-         * If a draw stack is pending and the player manually draws, they take the
-         * full pending amount.
-         */
         if (pendingDrawAmount > 0) {
-            applyPendingDrawToCurrentPlayer();
+            drawPendingCards(hand);
+            clearPendingDraw();
+            nextTurn(0);
+            notifyGameUpdated();
             runAITurnsIfNeeded();
             return;
         }
@@ -219,8 +218,8 @@ public class GameState {
 
         if (isValidMove(drawn, topCard, activeColor)) {
             Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
-            Player targetPlayer = getDrawnCardTarget(player, drawn);
-            playCard(player, drawn, chosenColor, targetPlayer);
+            Player target = getDrawnCardTarget(player, drawn);
+            playCard(player, drawn, chosenColor, target);
             return;
         }
 
@@ -231,14 +230,15 @@ public class GameState {
 
                 if (isValidMove(drawn, topCard, activeColor)) {
                     Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
-                    Player targetPlayer = getDrawnCardTarget(player, drawn);
-                    playCard(player, drawn, chosenColor, targetPlayer);
+                    Player target = getDrawnCardTarget(player, drawn);
+                    playCard(player, drawn, chosenColor, target);
                     return;
                 }
             }
         }
 
         nextTurn(0);
+        notifyGameUpdated();
         runAITurnsIfNeeded();
     }
 
@@ -251,27 +251,15 @@ public class GameState {
             return ((AIPlayer) player).chooseWildColor(hand);
         }
 
-        /*
-         * Temporary human fallback. The frontend already prompts for color when a
-         * human deliberately clicks a wild; a drawn auto-play wild needs a default.
-         */
         return Card.Color.RED;
     }
 
     private Player getDrawnCardTarget(Player player, Card drawn) {
         if (drawn != null &&
             drawn.getType() == Card.Type.PARTY &&
-            drawn.getPartyType() == Card.PartyType.SWAPPER) {
-
-            if (player instanceof AIPlayer) {
-                return chooseRandomTarget(player);
-            }
-
-            /*
-             * Human fallback. If the user draws a Swapper and it auto-plays, no target
-             * is selected, so the swap effect safely does nothing.
-             */
-            return null;
+            drawn.getPartyType() == Card.PartyType.SWAPPER &&
+            player instanceof AIPlayer) {
+            return chooseRandomTarget(player);
         }
 
         return null;
@@ -293,6 +281,7 @@ public class GameState {
             unoCalled = false;
         }
 
+        notifyGameUpdated();
         return true;
     }
 
@@ -336,10 +325,6 @@ public class GameState {
                 return 1;
 
             case WILD_DRAW_FOUR:
-                /*
-                 * Per the requested rule: only DRAW_TWO stacks on DRAW_TWO.
-                 * WILD_DRAW_FOUR resolves immediately and skips the next player.
-                 */
                 applyDrawToNextPlayer(4);
                 clearPendingDraw();
                 return 1;
@@ -376,25 +361,28 @@ public class GameState {
                card.getType() == Card.Type.DRAW_TWO;
     }
 
-    private void resolvePendingDrawStackIfCurrentPlayerCannotStack() {
-        while (winner == null &&
-               pendingDrawAmount > 0 &&
-               !currentPlayerHasStackableDrawTwo()) {
+    private void resolvePendingDrawAutomaticallyIfNeeded() {
+        while (winner == null && pendingDrawAmount > 0) {
+            Player current = getCurrentPlayer();
+            Hand hand = hands.get(current);
 
-            applyPendingDrawToCurrentPlayer();
+            if (hasStackableDrawTwo(hand)) {
+                return;
+            }
+
+            drawPendingCards(hand);
+            clearPendingDraw();
+            nextTurn(0);
         }
     }
 
-    private boolean currentPlayerHasStackableDrawTwo() {
-        Player current = getCurrentPlayer();
-        Hand hand = hands.get(current);
-
+    private boolean hasStackableDrawTwo(Hand hand) {
         if (hand == null) {
             return false;
         }
 
         for (Card card : hand.getCards()) {
-            if (card != null && card.getType() == Card.Type.DRAW_TWO) {
+            if (card.getType() == Card.Type.DRAW_TWO) {
                 return true;
             }
         }
@@ -402,22 +390,10 @@ public class GameState {
         return false;
     }
 
-    private void applyPendingDrawToCurrentPlayer() {
-        if (pendingDrawAmount <= 0) {
-            return;
+    private void drawPendingCards(Hand hand) {
+        for (int i = 0; i < pendingDrawAmount; i++) {
+            hand.addCard(deck.drawCard());
         }
-
-        Player current = getCurrentPlayer();
-        Hand hand = hands.get(current);
-
-        if (hand != null) {
-            for (int i = 0; i < pendingDrawAmount; i++) {
-                hand.addCard(deck.drawCard());
-            }
-        }
-
-        clearPendingDraw();
-        nextTurn(0);
     }
 
     private void clearPendingDraw() {
@@ -527,7 +503,19 @@ public class GameState {
         return isValidMove(played, top, top.getColor());
     }
 
-    private boolean requiresChosenColor(Card card) {
+    public boolean isWild(Card card) {
+        return card != null &&
+               (card.getType() == Card.Type.WILD ||
+                card.getType() == Card.Type.WILD_DRAW_FOUR);
+    }
+
+    public boolean needsTarget(Card card) {
+        return card != null &&
+               card.getType() == Card.Type.PARTY &&
+               card.getPartyType() == Card.PartyType.SWAPPER;
+    }
+
+    public boolean requiresChosenColor(Card card) {
         return card != null &&
                (card.getType() == Card.Type.WILD ||
                 card.getType() == Card.Type.WILD_DRAW_FOUR ||
@@ -543,18 +531,6 @@ public class GameState {
 
     public synchronized void runAITurnsIfNeeded() {
         if (winner != null) {
-            aiTurnScheduled = false;
-            return;
-        }
-
-        /*
-         * If a human turn has arrived with a pending stack and no DRAW_TWO, apply it
-         * immediately. This also handles chains of AI/human turns safely.
-         */
-        resolvePendingDrawStackIfCurrentPlayerCannotStack();
-
-        if (winner != null) {
-            aiTurnScheduled = false;
             return;
         }
 
@@ -594,14 +570,14 @@ public class GameState {
 
                     Card chosen = ai.chooseCardToPlay(hand, topCard, activeColor, rules.isStackingEnabled());
 
+                    aiTurnScheduled = false;
+
                     if (pendingDrawAmount > 0 && !canPlayDuringStack(chosen)) {
-                        aiTurnScheduled = false;
                         draw(ai);
                         return;
                     }
 
                     if (chosen == null) {
-                        aiTurnScheduled = false;
                         draw(ai);
                         return;
                     }
@@ -619,14 +595,11 @@ public class GameState {
                         target = chooseRandomTarget(ai);
                     }
 
-                    aiTurnScheduled = false;
                     playCard(ai, chosen, chosenColor, target);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                synchronized (GameState.this) {
-                    aiTurnScheduled = false;
-                }
+                aiTurnScheduled = false;
             }
         }).start();
     }
@@ -672,6 +645,8 @@ public class GameState {
                     } else {
                         activeColor = topCard.getColor();
                     }
+
+                    notifyGameUpdated();
                 }
             }
         }).start();
@@ -715,13 +690,5 @@ public class GameState {
 
     public boolean isGameOver() {
         return winner != null;
-    }
-
-    public int getPendingDrawAmount() {
-        return pendingDrawAmount;
-    }
-
-    public Card.Type getPendingDrawType() {
-        return pendingDrawType;
     }
 }
