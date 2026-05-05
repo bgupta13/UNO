@@ -423,7 +423,6 @@ public class GameState {
         switch (card.getPartyType()) {
             case KARL_MARX:
                 applyKarlMarx();
-                scheduleKarlMarxRemoval();
                 break;
 
             case SWAPPER:
@@ -632,38 +631,6 @@ public class GameState {
         }
 
         return possibleTargets.get(new Random().nextInt(possibleTargets.size()));
-    }
-
-    private void scheduleKarlMarxRemoval() {
-        final Card oldTop = previousTopCardBeforeKarlMarx;
-
-        new Thread(() -> {
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-
-            synchronized (GameState.this) {
-                if (topCard != null &&
-                    topCard.getType() == Card.Type.PARTY &&
-                    topCard.getPartyType() == Card.PartyType.KARL_MARX &&
-                    oldTop != null) {
-
-                    deck.removeTopDiscard();
-                    topCard = oldTop;
-
-                    if (topCard.getColor() == Card.Color.WILD) {
-                        activeColor = Card.Color.RED;
-                    } else {
-                        activeColor = topCard.getColor();
-                    }
-
-                    notifyGameUpdated();
-                }
-            }
-        }).start();
     }
 
     public Map<Player, Hand> getHands() {
