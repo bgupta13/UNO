@@ -217,6 +217,11 @@ public class GameState {
         hand.addCard(drawn);
 
         if (isValidMove(drawn, topCard, activeColor)) {
+            if (requiresHumanChoice(player, drawn)) {
+                notifyGameUpdated();
+                return;
+            }
+
             Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
             Player target = getDrawnCardTarget(player, drawn);
             playCard(player, drawn, chosenColor, target);
@@ -229,6 +234,11 @@ public class GameState {
                 hand.addCard(drawn);
 
                 if (isValidMove(drawn, topCard, activeColor)) {
+                    if (requiresHumanChoice(player, drawn)) {
+                        notifyGameUpdated();
+                        return;
+                    }
+
                     Card.Color chosenColor = getDrawnCardChosenColor(player, drawn, hand);
                     Player target = getDrawnCardTarget(player, drawn);
                     playCard(player, drawn, chosenColor, target);
@@ -242,6 +252,10 @@ public class GameState {
         runAITurnsIfNeeded();
     }
 
+    private boolean requiresHumanChoice(Player player, Card drawn) {
+        return requiresChosenColor(drawn) && !(player instanceof AIPlayer);
+    }
+
     private Card.Color getDrawnCardChosenColor(Player player, Card drawn, Hand hand) {
         if (!requiresChosenColor(drawn)) {
             return null;
@@ -251,7 +265,7 @@ public class GameState {
             return ((AIPlayer) player).chooseWildColor(hand);
         }
 
-        return Card.Color.RED;
+        return null;
     }
 
     private Player getDrawnCardTarget(Player player, Card drawn) {
