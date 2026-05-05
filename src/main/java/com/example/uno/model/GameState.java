@@ -339,6 +339,12 @@ public class GameState {
                 return 1;
 
             case WILD_DRAW_FOUR:
+                if (rules.isStackingEnabled()) {
+                    pendingDrawAmount += 4;
+                    pendingDrawType = Card.Type.WILD_DRAW_FOUR;
+                    return 0;
+                }
+
                 applyDrawToNextPlayer(4);
                 clearPendingDraw();
                 return 1;
@@ -371,8 +377,10 @@ public class GameState {
         }
 
         return card != null &&
-               pendingDrawType == Card.Type.DRAW_TWO &&
-               card.getType() == Card.Type.DRAW_TWO;
+               pendingDrawType != null &&
+               card.getType() == pendingDrawType &&
+               (card.getType() == Card.Type.DRAW_TWO ||
+                card.getType() == Card.Type.WILD_DRAW_FOUR);
     }
 
     private void resolvePendingDrawAutomaticallyIfNeeded() {
@@ -380,7 +388,7 @@ public class GameState {
             Player current = getCurrentPlayer();
             Hand hand = hands.get(current);
 
-            if (hasStackableDrawTwo(hand)) {
+            if (hasStackablePendingDrawCard(hand)) {
                 return;
             }
 
@@ -390,13 +398,13 @@ public class GameState {
         }
     }
 
-    private boolean hasStackableDrawTwo(Hand hand) {
-        if (hand == null) {
+    private boolean hasStackablePendingDrawCard(Hand hand) {
+        if (hand == null || pendingDrawType == null) {
             return false;
         }
 
         for (Card card : hand.getCards()) {
-            if (card.getType() == Card.Type.DRAW_TWO) {
+            if (card.getType() == pendingDrawType) {
                 return true;
             }
         }
