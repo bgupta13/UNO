@@ -269,12 +269,7 @@ public class GameView extends VerticalLayout implements BeforeEnterObserver {
         // UNO button
         boolean showUno = currentGame.getUnoPendingPlayer() != null && !currentGame.isUnoCalled();
         if (showUno) {
-            callUnoButton.getStyle().set("position", "absolute");
-            callUnoButton.getStyle().set("bottom", "20px");
-            callUnoButton.getStyle().set("left", "20px");
-            callUnoButton.getStyle().set("z-index", "100");
-            callUnoButton.getStyle().set("background-color", "rgba(255, 0, 0, 0.8)");
-            callUnoButton.getStyle().set("font-weight", "bold");
+            positionCallUnoButton();
             add(callUnoButton);
         }
 
@@ -283,6 +278,35 @@ public class GameView extends VerticalLayout implements BeforeEnterObserver {
         add(centerArea);
         add(handContainer);
     }
+    private void positionCallUnoButton() {
+        // Keep the button inside safe viewport regions:
+        // - top band above the draw/discard area
+        // - left/right middle bands beside the draw/discard area
+        // This avoids the player's hand at the bottom and the center deck/discard pile.
+        double[][] safeRegions = {
+                // minLeftVW, maxLeftVW, minTopVH, maxTopVH
+                {8, 88, 8, 32},
+                {8, 25, 42, 62},
+                {75, 88, 42, 62}
+        };
+
+        double[] region = safeRegions[(int) (Math.random() * safeRegions.length)];
+        int left = randomInRange(region[0], region[1]);
+        int top = randomInRange(region[2], region[3]);
+
+        callUnoButton.getStyle().set("position", "fixed");
+        callUnoButton.getStyle().remove("bottom");
+        callUnoButton.getStyle().set("left", left + "vw");
+        callUnoButton.getStyle().set("top", top + "vh");
+        callUnoButton.getStyle().set("z-index", "100");
+        callUnoButton.getStyle().set("background-color", "rgba(255, 0, 0, 0.8)");
+        callUnoButton.getStyle().set("font-weight", "bold");
+    }
+
+    private int randomInRange(double min, double max) {
+        return (int) Math.round(min + Math.random() * (max - min));
+    }
+
 
     // Player layouts
     private Div createOpponentSlot(List<Player> opponents, int index) {
