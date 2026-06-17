@@ -210,11 +210,3 @@ git push origin feature/my-feature
 ## License
 
 This project is licensed under the MIT License unless otherwise specified.
-
----
-
-## Author
-
-**Bhav Gupta**
-
-GitHub: https://github.com/bgupta13
